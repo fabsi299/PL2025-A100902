@@ -9,4 +9,4 @@ Aqui serão armazenados todos os trabalhos da Unidade Curricular de Processament
 - **ID:** A100902
 - **Foto:**
 
-![Fotografia do aluno](img.jpg)
+<img src="img.jpg" alt="Fotografia do aluno" width="300" height="300">

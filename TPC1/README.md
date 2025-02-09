@@ -15,4 +15,4 @@ Após isso é feito um loop que a cada parte do texto resultante do 're.split()'
 - on : coloca a variavél 'ligado' com valor 'True'.
 - off : coloca a variavél 'ligado' com valor 'False'.
 - = : apresenta o valor atual da variável 'soma'.
-- número : verifica o estado do contador e, caso esteja com valor 'True', utiliza re.findall() para ir buscar apenas os números a essa parte textual e executa a soma..
+- texto : verifica o estado do contador e, caso a variável 'ligado' esteja com valor 'True', utiliza re.findall() para ir buscar apenas os números a essa parte textual e executa a soma..
