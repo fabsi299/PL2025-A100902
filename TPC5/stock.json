@@ -1,0 +1,32 @@
+[
+    {
+        "cod": "A23",
+        "nome": "\u00c1gua 0,5L",
+        "quantidade": 7,
+        "preco": 0.7
+    },
+    {
+        "cod": "B45",
+        "nome": "Refrigerante em lata",
+        "quantidade": 15,
+        "preco": 1.2
+    },
+    {
+        "cod": "c67",
+        "nome": "Sandes natural",
+        "quantidade": 5,
+        "preco": 3.5
+    },
+    {
+        "cod": "D89",
+        "nome": "Barra de cereais",
+        "quantidade": 12,
+        "preco": 1.0
+    },
+    {
+        "cod": "E12",
+        "nome": "sumo 300ml",
+        "quantidade": 10,
+        "preco": 2.0
+    }
+]
