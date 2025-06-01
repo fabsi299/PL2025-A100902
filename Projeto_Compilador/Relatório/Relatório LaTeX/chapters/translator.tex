@@ -1,0 +1,90 @@
+% ficheiro: chapters/translator.tex
+\chapter{Translator}
+
+Por fim criamos o ficheiro \textbf{"translator.py"} que, como o  nome indica, traduz a árvore sintática  resultante da execução do parser, passando então o conjunto dos vários tokens representativos do código \textbf{Pascal} para instruções compativeis com o funcionamento da EWVM e devolvendo um ficheiro Output.txt com o código resultante. Estas instruções quando colocadas na EWVM produzem o mesmo resultado que o código passado como input.
+
+Na construção do \textbf{translator} começamos por dividi-lo em diferentes classes, sendo que a cada classe é atribuído um papel diferente. Desta forma o código tornou-se mais organizado, da mesma forma que a procura e correção de erros tornou-se mais eficiente.
+O programa encontra-se  então dividido nas seguintes classes:
+
+\begin{itemize}
+    \item SymbolTable
+    \item LabelGenerator
+    \item ExpressionTranslator
+    \item StatmentTranslator
+    \item Translator (classe principal)
+\end{itemize}
+
+\newpage
+
+\section{SymbolTable}
+
+A classe \textbf{SymbolTable} permite a alocação das diferentes variáveis, colocando-as dentro de um dicionário. Quando colocada dentro do dicionário é atribuída à variável também um índice, valor o qual é obtido através da contagem total das variáveis. Da mesma forma que  guarda o endereço, é  guardado também o tipo do mesmo, o que facilitará o trabalho com as variáveis quando as mesmas forem necessárias.
+
+\paragraph{}
+
+\subsection{Métodos principais:}
+\begin{itemize}
+    \item \textbf{allocate\_var()}: Aloca uma nova variável e retorna seu endereço
+    \item \textbf{get\_var\_info()}: Recupera informações sobre uma variável específica
+\end{itemize}
+
+\paragraph{}
+
+\section{LabelGenerator}
+
+A classe \textbf{LabelGenerator} tem como única função a geração das labels necessárias para rotular elementos como if/else, while, for loops. Dentro da classe foi criado um contador interno de forma a garantir a unicidade dos labels gerados.
+
+\subsection*{Métodos principais:}
+\begin{itemize}
+    \item \textbf{generate()}: Produz um novo rótulo com prefixo personalizado
+\end{itemize}
+
+\newpage
+\section{ExpressionTranslator}
+
+A classe \textbf{ExpressionTranslator} é o responsável pela tradução das  expressões Pascal (constantes, variáveis, operações aritméticas, relacionais) para instruções da máquina virtual. É através desta classe que operações como "a + b" são transformadas em sequências de instruções PUSH e ADD. 
+
+\subsection*{Métodos principais:}
+\begin{itemize}
+
+    \item \textbf{translate\_numeric\_constant()}: Aplica um PUSHI a um inteiro passado como input.
+    \item \textbf{translate\_real\_constant()}:  Aplica um PUSHF a um número real passado como input.
+    \item \textbf{translate\_string\_constant()}:  Aplica um PUSHS a uma string passada como input.
+    \item \textbf{translate\_variable\_ref()}:  Aplica um PUSHG ao endereço de uma variável, recebendo o nome desta mesma como input.
+    \item \textbf{translate\_array\_access()}: Função que permite o acesso a um array,  recebendo o nome do array e a posição em que vai ser acessada.
+    \item \textbf{translate\_arithmetic\_op()}: Funçao responsável pela tradução das operações aritmétricas.
+    \item \textbf{translate\_unary\_op()}: Função responsável pela tradução de números negativos(uminus) e a operação NOT.
+    \item \textbf{translate\_relational\_op()}: Funçao responsável pela tradução das operações relacionais. 
+    \item \textbf{translate()}: Tanto nesta classe como na classe \textbf{StatmentTranslator}, existe esta função (\textbf{translate()}) que serve como coordenador e, recebendo uma dada expressão, utiliza o \textbf{isinstance()} ou atributos da expressão fornecida de forma a redirecionar o "trabalho" para outra função.
+    
+\end{itemize}
+
+\newpage
+\section{StatmentTranslator}
+Esta classe é responsável pela criação das instruções VM equivalentes aos comandos Pascal (atribuições, if/else, loops, read/write). Utiliza o auxilio da classe ExpressionTranslator para processar expressões dentro dos comandos e gera o controle de fluxo adequado.
+
+
+\subsection*{Métodos principais:}
+\begin{itemize}
+    \item \textbf{translate\_assignment():} Função responsável pela tradução das atribuições de valores a variáveis.
+    \item \textbf{translate\_write() / translate\_writeln():} Funções responsáveis pela tradução das funções de print. O \textbf{translate\_writeln()} aproveita-se do \textbf{translate\_write()} uma vez que a lógica é exatamente a mesma, acrescentando apenas um WRITELN no fim (que acrescenta newline no final da string.
+     \item \textbf{translate\_readln()/ translate\_readln\_array():} Função responsável por criar as instruções que permitiram o input de dados.
+    \item \textbf{translate\_if():} Função responsável pela criação das instruções que permitiram o funcionamento das estruturas condicionais. Esta função utiliza o \textbf{LabelGenerator} para criar as labels que tornaram os saltos condicionais possíveis.
+    \item \textbf{translate\_while() / translate\_for():} Funções responsáveis pela criação das instruções que permitiram a tradução dos ciclos. Estas funções utilizam também o \textbf{LabelGenerator} para criar as labels que tornaram os saltos condicionais dentro dos ciclos possíveis.
+     \item \textbf{get\_expression\_type()}: Função auxiliar que permite a obtenção do tipo de uma expressão.
+\end{itemize}
+
+\paragraph{}
+
+\textbf{Nota:} Na execução do translate\_write() foi implementada a receção dos parâmetros para formatar a string como passado no input (exemplo disso, "write(x:8:2);"), mas o grupo não encontrou solução para implementar essa funcionalidade com instruções VM, sendo esses valores apenas armazenados dentro de variáveis.
+
+\newpage
+\section{Translator}
+
+Esta é a classe coordena todo o processo de tradução, processando declarações de variáveis e integrando todos os tradutores especializados. Recebe a AST do programa Pascal (resultante do funcionamento do parser) e trata  de unir as várias peças que irão formar o código completo da máquina virtual, introduzindo as instruções START/STOP.
+
+\subsection*{Métodos principais:}
+\begin{itemize}
+    \item \textbf{translate\_declarations()}: Função responsável por declarar as variáveis, verificando o tipo das mesmas e introduzindo instruções de PUSH conforme o tipo.
+    \item \textbf{translate\_program()}: Função coordenadora. Esta função é responsável por chamar todas as classes anteriores de forma a ser feita a tradução completa da AST para instruções da máquina virtual.
+\end{itemize}

@@ -1,0 +1,80 @@
+\documentclass[12pt,a4paper]{report}
+
+\usepackage[margin=1in]{geometry}
+\geometry{
+  a4paper,
+  right=25mm, outer=25mm, inner=25mm,
+  top=25mm, bottom=25mm
+}
+
+% ──────────────────────────────────────────────────────
+% PACOTES COMUNS
+% ──────────────────────────────────────────────────────
+\usepackage[portuguese,english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{fontspec}
+\usepackage{graphicx,amsmath,amsfonts,amssymb}
+\usepackage{booktabs,multirow,longtable,tabularx}
+\usepackage{afterpage,layout,fancyhdr}
+\usepackage{xcolor}
+\usepackage{apacite,caption,float,makecell}
+\usepackage{titlesec,etoolbox}
+\usepackage[acronym]{glossaries}
+\usepackage{pdfpages}
+
+% ──────────────────────────────────────────────────────
+% FORMATAÇÃO DE TÍTULOS
+% ──────────────────────────────────────────────────────
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\color{darkgray}}{}{0pt}{\Large}
+\titleformat*{\section}{\color{darkgray}\Large\bfseries}
+\setcounter{secnumdepth}{3}
+\renewcommand{\baselinestretch}{1.5}
+
+\setmainfont[
+  Ligatures=TeX,
+  AutoFakeSlant=0.20,
+  BoldFont=NewsGotTBold.ttf
+]{NewsGotT.ttf}
+\titlespacing{\chapter}{0pt}{-40pt}{10pt}
+
+% ──────────────────────────────────────────────────────
+% HEADER/FOOTER
+% ──────────────────────────────────────────────────────
+\fancyhf{}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\fancyhead[R]{\textcolor{gray}{Processamento de Linguagens}}
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}
+\patchcmd{\chapter}{\thispagestyle{plain}}{\thispagestyle{fancy}}{}{}
+\patchcmd{\headrule}{\hrule}{\color{black}\hrule}{}{}
+\fancyfoot[R]{\thepage}
+
+% ──────────────────────────────────────────────────────
+\begin{document}
+\pagenumbering{roman}
+
+% ─── Página de título
+\begin{titlepage}
+  \include{capa/coverPage}
+\end{titlepage}
+
+% ─── Índice
+\renewcommand{\contentsname}{Índice}
+\tableofcontents
+\clearpage
+\let\oldnumberline\numberline
+\renewcommand{\numberline}[1]{\hspace*{-1.5em}}
+
+% A partir daqui mudamos para numeração árabe
+\pagenumbering{arabic}
+
+% ─── Inclusão das quatro secções, cada uma num ficheiro próprio
+\include{chapters/introdução}
+\include{chapters/lexer}
+\include{chapters/parser}
+\include{chapters/translator}
+\include{chapters/conclusao}
+
+\end{document}

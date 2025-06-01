@@ -1,0 +1,657 @@
+% ficheiro: chapters/parser.tex
+\chapter{Parser}
+
+O parser foi implementado em Python, recorrendo à biblioteca {\tt PLY} (Python Lex-Yacc), que disponibiliza funcionalidades semelhantes às do \texttt{lex} e \texttt{yacc} em ambiente C.
+
+A gramática baseia-se fortemente na utilizada pelo compilador Free Pascal, mas ajustada para um subconjunto que exclui \emph{functions} e \emph{procedures}, bem como alguns recursos avançados (por exemplo, \emph{downto}, \emph{case}, \emph{repeat}, \emph{const}, etc.). O parser aceita declarações de variáveis, estruturas de controlo (\texttt{if/then/else}, \texttt{for/to}, \texttt{while}), leitores/escritores (\texttt{readln}, \texttt{write}, \texttt{writeln}), literais de números inteiros e reais, strings e arrays unidimensionais.
+
+Este documento organiza-se da seguinte forma: na Secção \ref{sec:objetivos} definem-se os objetivos específi\-cos do parser; na Secção \ref{sec:gramatica} apresenta-se a gramática adoptada em notação BNF; na Secção \ref{sec:implementacao} detalha-se a implementação em PLY, explicando cada componente; na Secção \ref{sec:verificacoes} discute-se a abordagem às verificações semânticas básicas; a Secção \ref{sec:erros} descreve o tratamento de erros sintáticos; na Secção \ref{sec:limitacoes} apontam-se limitações atuais e, por fim, na Secção \ref{sec:conclusao} apresentam-se conclusões e perspetivas para trabalho futuro.
+
+\section{Objetivos do Parser}
+\label{sec:objetivos}
+
+O parser \texttt{pascal\_sin.py} cumpre as seguintes metas:
+
+\begin{enumerate}
+    \item \textbf{Definir a gramática de um subconjunto de Pascal}: Formalizar as regras sintáticas que abrangem declarações, expressões aritméticas e relacionais, controlo de fluxo, declarações de arrays e comandos de I/O.
+    
+    \item \textbf{Implementar a análise sintática em PLY}: Traduzir as regras gramaticais para funções \texttt{p\_<nome\_produção>} adequadas, definindo precedências e associatividades quando necessário.
+    
+    \item \textbf{Construir uma Árvore de Sintaxe Abstrata (AST)}: Cada produção deve gerar um nó AST (geralmente representado por tuplos Python) que capture a estrutura do programa, permitindo a travessia posterior pelo \texttt{translator.py}.
+    
+    \item \textbf{Efetuar verificações semânticas básicas durante o parsing}:
+    \begin{itemize}
+        \item Assegurar que variáveis são declaradas antes de serem usadas (\emph{undeclared variable}).
+        \item Verificar, caso o índice seja literal, se o acesso a posições de array respeita os limites definidos na declaração.
+    \end{itemize}
+    
+    \item \textbf{Gerir o problema do \emph{dangling else}}: Implementar as produções \texttt{MatchedStatement} e \texttt{UnmatchedStatement} para garantir a correta associação dos comandos \texttt{else}.
+    
+    \item \textbf{Acumular e reportar erros sintáticos}: Não interromper a análise logo ao primeiro erro, mas armazenar mensagens numa lista \texttt{syntax\_errors}, indicando linha e coluna do erro.
+
+\end{enumerate}
+
+\section{Gramática Definida}
+\label{sec:gramatica}
+
+Nesta secção apresenta-se a gramática formal adoptada para o parser, numa notação próxima de BNF (Backus–Naur Form). As produções encontram-se agrupadas por categorias: definição do programa, declarações, tipos, expressões e statements. 
+
+\subsection{Produção Inicial: Programa}
+
+\begin{verbatim}
+Program ::= PROGRAM VARNAME ';' Code '.'
+\end{verbatim}
+
+\noindent
+
+\textbf{Comentários}:
+\begin{itemize}
+    \item \texttt{PROGRAM} e identificador são sensíveis a palavras reservadas; \texttt{VARNAME} é reconhecido em {\tt pascal\_lex.py}.
+    \item A produção obriga a terminação com \texttt{'.'} (ponto final).
+\end{itemize}
+
+\subsection{Declarações e Bloco Principal}
+
+\begin{verbatim}
+Code ::= Declarations CompoundStatement
+
+Declarations ::=                \# Declarações opcionais
+               | VAR VariableList
+
+VariableList ::= VariableDeclaration
+               | VariableList VariableDeclaration
+
+VariableDeclaration ::= IdentifierList ':' DataType ';'
+
+IdentifierList ::= VARNAME
+                 | IdentifierList ',' VARNAME
+
+DataType ::= INTEGER
+           | REAL
+           | BOOLEAN
+           | STRING
+           | ARRAY '[' NUM '..' NUM ']' OF DataType
+\end{verbatim}
+
+\noindent
+
+\textbf{Comentários}:
+\begin{itemize}
+    \item O bloco \texttt{Declarations} pode ser vazio (produção implícita \texttt{Declarations ::=}).
+    \item Em \texttt{DataType}, o tipo \texttt{ARRAY} aceita apenas índices literais inteiros (\texttt{NUM} corresponde a inteiro). 
+    \item As produções definem arrays unidimensionais com limite inferior e superior provenientes de literais.
+    \item \texttt{IdentifierList} permite declarações do tipo \texttt{a, b, c: integer;}.
+\end{itemize}
+
+\subsection{Statements e \emph{Dangling Else}}
+
+Para evitar ambiguidades no emparelhamento de \texttt{else}, foram definidas duas categorias de statements: 
+\texttt{MatchedStatement} (com else completamente emparelhado) e \texttt{UnmatchedStatement} (if sem else ou else emparelhado parcialmente).
+
+\begin{verbatim}
+Statement ::= MatchedStatement
+            | UnmatchedStatement
+
+MatchedStatement ::= IF Exp THEN MatchedStatement ELSE MatchedStatement
+                   | NonIfStatement
+
+UnmatchedStatement ::= IF Exp THEN MatchedStatement ELSE UnmatchedStatement
+                     | IF Exp THEN Statement
+
+NonIfStatement ::= CompoundStatement
+                 | RepetitiveStatement
+                 | SingleStatement
+\end{verbatim}
+
+\noindent
+
+\textbf{Comentários}:
+\begin{itemize}
+    \item \texttt{MatchedStatement} reconhece \texttt{if} com \texttt{else} ou qualquer outro statement que não comece por \texttt{if}.
+    \item \texttt{UnmatchedStatement} cobre dois casos:
+    \begin{itemize}
+        \item \texttt{if ... then <MatchedStatement> else <UnmatchedStatement>} (caso em que o \texttt{else} continua a procurar correspondência mais interna)
+        \item \texttt{if ... then <Statement>} (caso sem \texttt{else}).
+    \end{itemize}
+\end{itemize}
+
+\subsection{Statements Simples e Compostos}
+
+\begin{verbatim}
+CompoundStatement ::= BEGIN StatementList END OptionalSemicolon
+
+StatementList ::= Statement
+                | StatementList Statement
+
+OptionalSemicolon ::= ';'
+                    | ε
+
+RepetitiveStatement ::= FOR VARNAME ATRIB Exp TO Exp DO Statement
+                      | WHILE Exp DO Statement
+
+SingleStatement ::= VARNAME ATRIB Exp ';'
+                  | WRITELN '(' ArgumentList ')' OptionalSemicolon
+                  | WRITELN OptionalSemicolon
+                  | WRITE '(' ArgumentList ')' OptionalSemicolon
+                  | READLN '(' VARNAME ')' ';'
+                  | READLN '(' VARNAME '[' Exp ']' ')' ';'
+\end{verbatim}
+
+\noindent
+
+\textbf{Comentários}:
+\begin{itemize}
+    \item \texttt{CompoundStatement} agrupa statements entre \texttt{BEGIN} e \texttt{END}, opcionalmente seguidos de \texttt{';'} antes do \texttt{END}.
+    \item Em \texttt{SingleStatement}, o símbolo \texttt{ATRIB} corresponde a \texttt{":="}.
+    \item As produções de \texttt{READLN} aceitam leitura de variáveis simples ou de elementos de um array.
+    \item \texttt{WRITELN} pode ser usado sem argumentos.
+\end{itemize}
+
+\subsection{Argumentos de I/O (WRITE/Writeln)}
+
+\begin{verbatim}
+ArgumentList ::= Argument
+               | ArgumentList ',' Argument
+
+Argument ::= STR
+           | Exp
+           | Exp ':' FORMAT
+
+FORMAT ::= NUM
+         | NUM ':' NUM
+\end{verbatim}
+
+\noindent
+
+\textbf{Comentários}:
+\begin{itemize}
+    \item \texttt{STR} corresponde a literais string entre apóstrofos (\texttt{'texto'}).
+    \item A cláusula \texttt{FORMAT} aceita formato padrão de Pascal, por exemplo \texttt{5} (largura) ou \texttt{5:2} (largura e precisão). Atualmente, o parser regista o valor, mas a implementação no \texttt{translator.py} não efetua formatação detalhada.
+\end{itemize}
+
+\subsection{Expressões Aritméticas e Relacionais}
+
+\begin{verbatim}
+Exp ::= SimpleExpression RelOp SimpleExpression
+      | SimpleExpression
+
+RelOp ::= EQUALS    # '='
+        | NE        # '<>'
+        | LT        # '<'
+        | LE        # '<='
+        | GT        # '>'
+        | GE        # '>='
+        | AND
+        | OR
+
+SimpleExpression ::= '+' AdditiveExpression
+                   | '-' AdditiveExpression %prec UMINUS
+                   | AdditiveExpression
+
+AdditiveExpression ::= AdditiveExpression '+' Term
+                     | AdditiveExpression '-' Term
+                     | Term
+
+Term ::= Term '*' Factor
+       | Term '/' Factor
+       | Term '%' Factor
+       | Factor
+
+Factor ::= NUM
+         | NUM_REAL
+         | STRING
+         | VARNAME
+         | '(' Exp ')'
+         | VARNAME '[' Exp ']'
+         | NOT Factor %prec NOT
+\end{verbatim}
+
+\noindent
+
+\textbf{Comentários}:
+\begin{itemize}
+    \item Os literais \texttt{NUM} (inteiros), \texttt{NUM\_REAL} (reais) e \texttt{STRING} são reconhecidos pelo \emph{lexer}.
+    \item Acesso a arrays via \texttt{VARNAME '[' Exp ']'}. Caso o índice seja literal, verifica-se limite durante o parsing.
+    \item \texttt{NOT}, \texttt{AND} e \texttt{OR} são tratados como operadores lógicos, com precedência ajustada no bloco \texttt{precedence}.
+    \item A precedência define que operações aritméticas de multiplicação têm prioridade sobre adição/subtração, e que \texttt{UMINUS} e \texttt{NOT} têm precedência maior (unários).
+\end{itemize}
+
+\subsection{Precedência e Associatividade}
+
+No início do ficheiro \texttt{pascal\_sin.py} define-se o tuple \texttt{precedence} para resolver ambiguidades:
+
+\begin{verbatim}
+precedence = (
+    ('nonassoc', 'EQUALS', 'NE', 'LT', 'LE', 'GT', 'GE', 'AND', 'OR'),
+    ('left', '+', '-'),
+    ('left', '*', '/', '%'),
+    ('right', 'UMINUS'),
+    ('right', 'NOT'),
+)
+\end{verbatim}
+
+\noindent
+
+\textbf{Comentários}:
+\begin{itemize}
+    \item Operadores relacionais e lógicos (\texttt{AND}, \texttt{OR}) são não-associativos (\texttt{nonassoc}).
+    \item Soma e subtração (\texttt{+}, \texttt{-}) e multiplicação/divisão/módulo (\texttt{*}, \texttt{/}, \texttt{\%}) têm associatividade à esquerda (\texttt{left}).
+    \item Operadores unários \texttt{-} (negativo) e \texttt{NOT} são tratados com precedência maior, associativos à direita (\texttt{right}).
+\end{itemize}
+
+\section{Implementação em PLY}
+\label{sec:implementacao}
+
+Esta secção descreve os principais aspetos da implementação do parser usando PLY, abordando a declaração de tokens (importados de \texttt{pascal\_lex.py}), definição das funções de produção, construção da AST e integração com o lexer.
+
+\subsection{Declaração de Tokens e Literais}
+No início de \texttt{pascal\_sin.py}, importa-se:
+
+\begin{verbatim}
+import ply.yacc as yacc
+from pascal_lex import tokens, literals, lexer, precedence
+\end{verbatim}
+
+\noindent
+
+\texttt{Tokens} e \texttt{literals} são listas definidas em \texttt{pascal\_lex.py}, que incluem todos os símbolos terminais necessários (palavras reservadas, operadores e pontuação). O objeto \texttt{lexer} é usado para fornecer tokens ao parser.
+
+\subsection{Construção da AST}
+
+Cada função de produção em PLY segue o padrão:
+
+\begin{verbatim}
+def p_NomeDaProducao(p):
+    "Producao : simbolo1 simbolo2 ..."
+    # Aceder a p[1], p[2], ...
+    p[0] = <estrutura de nó AST>
+\end{verbatim}
+
+O parser constrói a AST usando tuples Python. A convenção adotada é:
+\begin{itemize}
+    \item O primeiro elemento do tuplo identifica o tipo de nó (por exemplo, \texttt{'program'}, \texttt{'decl'}, \texttt{'assign'}, \texttt{'if'}, \texttt{'for'}, \texttt{'array\_access'} etc.).
+    \item Os elementos subsequentes contêm os campos relevantes do nó (nomes de variáveis, expressões filhas, listas de declarações, etc.).
+\end{itemize}
+
+\subsection{Produção Inicial: \texttt{Program}}
+
+\begin{verbatim}
+def p_Program(p):
+    "Program : PROGRAM VARNAME ';' Code '.'"
+    p[0] = ('program', p[2], p[4])
+\end{verbatim}
+
+\noindent
+
+\textbf{Descrição}:
+\begin{itemize}
+    \item Verifica a sintaxe obrigatória: a palavra reservada \texttt{PROGRAM}, seguida de um identificador (\texttt{VARNAME}), ponto-e-vírgula, bloco \texttt{Code} e ponto final.
+    \item A atribuição \texttt{p[0] = ('program', p[2], p[4])} cria o nó de raiz da AST, com etiqueta \texttt{'program'}, armazenando o nome do programa (\texttt{p[2]}) e o subnó \texttt{Code}.
+\end{itemize}
+
+\subsection{Declarações de Variáveis (\texttt{Declarations})}
+
+\begin{verbatim}
+def p_Declarations_empty(p):
+    "Declarations :"
+    p[0] = None
+
+def p_Declarations_var(p):
+    "Declarations : VAR VariableList"
+    p[0] = ('var_decls', p[2])
+\end{verbatim}
+
+\noindent
+
+\begin{itemize}
+    \item Quando não existem declarações (\texttt{Declarations :ε}), define-se \texttt{p[0] = None}.
+    \item Se existir a palavra reservada \texttt{VAR}, a produção \texttt{VariableList} gera uma lista de declarações individuais. O nó \texttt{('var\_decls', p[2])} armazena essa lista.
+\end{itemize}
+
+\subsection{Declaração de Tipos e Variáveis}
+
+\begin{verbatim}
+def p_VariableDeclaration(p):
+    "VariableDeclaration : IdentifierList ':' DataType ';'"
+    for var in p[1]:
+        if p[3] == "integer":
+            dic[var] = (0, "integer")
+        if p[3] == "boolean":
+            dic[var] = ('true', "boolean")
+        if p[3] == "string":
+            dic[var] = ('', "string")
+        if p[3] == "real":
+            dic[var] = (0.0, "real")
+        elif isinstance(p[3], tuple) and p[3][0] == 'array':
+            low, high = p[3][1]
+            size = high - low + 1
+            dic[var] = ([0] * size, p[3])
+        else:
+            dic[var] = (None, p[3])
+    p[0] = ('decl', p[1], p[3])
+\end{verbatim}
+
+\noindent
+
+\textbf{Explicação}:
+\begin{itemize}
+    \item Recebe \texttt{IdentifierList} (lista de nomes), \texttt{DataType} (tipo de dados) e inicializa o dicionário global \texttt{dic} com valores padrão: 
+    \begin{itemize}
+        \item Inteiros iniciados a \texttt{0}, reais a \texttt{0.0}, booleanos a \texttt{'true'} (string), strings a \texttt{''}.
+        \item Arrays: calcula tamanho (em \texttt{size}) e aloca lista de zeros. 
+    \end{itemize}
+    \item O nó AST \texttt{('decl', [vars], tipo)} armazena a lista de variáveis e o respectivo tipo.
+    \item A existência de \texttt{dic} aqui permite verificações semânticas posteriores (por exemplo, verificação de existência na atribuição e limites de array).
+\end{itemize}
+
+\subsection{Expressões e Operadores}
+\subsubsection{Expressões Relacionais e Lógicas}
+
+\begin{verbatim}
+def p_Expression_relop(p):
+    "Exp : SimpleExpression RelOp SimpleExpression"
+    p[0] = ('rel', p[2], p[1], p[3])
+
+def p_Expression_and(p):
+    "Exp : Exp AND Exp"
+    p[0] = ('and', p[1], p[3])
+
+def p_Expression_or(p):
+    "Exp : Exp OR Exp"
+    p[0] = ('or', p[1], p[3])
+
+def p_Expression_simple(p):
+    "Exp : SimpleExpression"
+    p[0] = p[1]
+
+def p_RelOp(p):
+    """RelOp : EQUALS
+             | NE
+             | LT
+             | LE
+             | GT
+             | GE
+    """
+    p[0] = p[1]
+\end{verbatim}
+
+\noindent
+
+\begin{itemize}
+    \item \texttt{Exp} pode corresponder a expressões comparativas: \texttt{SimpleExpression RelOp SimpleExpression}, devolvendo nó \texttt{('rel', operador, esquerda, direita)}.
+    \item \texttt{RelOp} inclui operadores relacionais (\texttt{=, <>, <, <=, >, >=}) e lógicos (\texttt{AND, OR}). Embora em Pascal \texttt{AND}/\texttt{OR} sejam operadores booleanos, aqui enquadram-se no mesmo nível dos relacionais.
+    \item Exemplo: para \texttt{a < b}, gera-se \texttt{('rel', '<', ('var','a'), ('var','b'))}.
+\end{itemize}
+
+\subsubsection{Expressões Aritméticas}
+
+\begin{verbatim}
+def p_SimpleExpression_sign(p):
+    "SimpleExpression : '+' AdditiveExpression"
+    p[0] = p[2]
+
+def p_SimpleExpression_sign_neg(p):
+    "SimpleExpression : '-' AdditiveExpression %prec UMINUS"
+    p[0] = ('uminus', p[2])
+
+def p_SimpleExpression(p):
+    "SimpleExpression : AdditiveExpression"
+    p[0] = p[1]
+
+def p_AdditiveExpression_plus(p):
+    "AdditiveExpression : AdditiveExpression '+' Term"
+    p[0] = ('+', p[1], p[3])
+
+def p_AdditiveExpression_minus(p):
+    "AdditiveExpression : AdditiveExpression '-' Term"
+    p[0] = ('-', p[1], p[3])
+
+def p_AdditiveExpression_term(p):
+    "AdditiveExpression : Term"
+    p[0] = p[1]
+
+def p_Term_mul(p):
+    "Term : Term '*' Factor"
+    p[0] = ('*', p[1], p[3])
+
+def p_Term_div(p):
+    "Term : Term '/' Factor"
+    p[0] = ('/', p[1], p[3])
+
+def p_Term_mod(p):
+    "Term : Term '%' Factor"
+    p[0] = ('%', p[1], p[3])
+
+def p_Term_factor(p):
+    "Term : Factor"
+    p[0] = p[1]
+\end{verbatim}
+
+\noindent
+
+\begin{itemize}
+    \item A gramática segue a hierarquia de precedência: multiplicação/divisão/mod tem precedência sobre adição/subtração. 
+    \item O operador unário negativo \texttt{-} (precedência \texttt{UMINUS}) gera nó \texttt{('uminus', expr)}.
+    \item Operadores binários produzem nós \texttt{('+', esquerda, direita)}, \texttt{('-', esquerda, direita)}, \texttt{('*', esquerda, direita)}, etc.
+\end{itemize}
+
+\subsubsection{Fatores}
+
+\begin{verbatim}
+def p_Factor_num(p):
+    "Factor : NUM"
+    p[0] = p[1]
+
+def p_Factor_real(p):
+    "Factor : NUM_REAL"
+    p[0] = p[1]
+
+def p_Factor_string(p):
+    "Factor : STRING"
+    p[0] = p[1]
+
+def p_Factor_true(p):
+    "Factor : TRUE"
+    p[0] = 1
+
+def p_Factor_false(p):
+    "Factor : FALSE"
+    p[0] = 0
+
+def p_Factor_var(p):
+    "Factor : VARNAME"
+    p[0] = ('var', p[1])
+
+def p_Factor_paren(p):
+    "Factor : '(' Exp ')'"
+    p[0] = p[2]
+
+def p_Factor_array(p):
+    "Factor : VARNAME '[' Exp ']'"
+    # Verificação de limites de array em tempo de parsing, se índice literal.
+    p[0] = ('array_access', p[1], p[3])
+
+def p_Factor_not(p):
+    "Factor : NOT Factor %prec NOT"
+    p[0] = ('not', p[2])
+\end{verbatim}
+
+\noindent
+
+\begin{itemize}
+    \item Literais numéricos (\texttt{NUM}, \texttt{NUM\_REAL}) e strings (\texttt{STRING}) propagam o valor Python (int, float ou str).
+    \item Variável gera nó \texttt{('var', nome\_variável)}.
+    \item Acesso a arrays (por ex., \texttt{arr[5]}) produz nó \texttt{('array\_access', nome\_array, índice)}. Caso o índice seja constante, executa-se verificação de limites, fazendo o ajuste do \texttt{parser.success = False} caso falhd.
+    \item \texttt{NOT} gera nó \texttt{('not', expr)}.
+\end{itemize}
+
+\subsection{Exemplo de Produção Completa}
+
+Para ilustrar, segue a produção completa de um statement \texttt{if-then-else} totalmente emparelhado:
+
+\begin{verbatim}
+def p_MatchedStatement_if(p):
+    "MatchedStatement : IF Exp THEN MatchedStatement ELSE MatchedStatement"
+    p[0] = ('if', p[2], ('then', p[4]), ('else', p[6]))
+\end{verbatim}
+
+\noindent
+
+\textbf{Explicação do AST gerado}:
+\begin{itemize}
+    \item \texttt{('if', condição, ('then', nó\_then), ('else', nó\_else))}.
+    \item \texttt{p[2]} é a expressão lógica ou relacional.
+    \item \texttt{p[4]} e \texttt{p[6]} são nós AST recursivos para os ramos \texttt{then} e \texttt{else}.
+\end{itemize}
+
+\subsection{Tratamento do \emph{Dangling Else}}
+
+O \emph{dangling else} é resolvido pelas produções:
+
+\begin{verbatim}
+MatchedStatement ::= IF Exp THEN MatchedStatement ELSE MatchedStatement
+                   | NonIfStatement
+
+UnmatchedStatement ::= IF Exp THEN MatchedStatement ELSE UnmatchedStatement
+                     | IF Exp THEN Statement
+\end{verbatim}
+
+Desta forma, assegura-se que cada \texttt{else} corresponde ao \texttt{if} mais próximo sem \texttt{else}, evitando ambiguidade. A inclusão de \texttt{MatchedStatement} como não-terminal no \texttt{UnmatchedStatement} garante que blocos \texttt{then} completos podem conter outros \texttt{if/else} devidamente emparelhados antes de encontrar \texttt{else} externo.
+
+\subsection{Verificação de Erros Sintáticos}
+A função de tratamento de errosé definida como:
+
+\begin{verbatim}
+def p_error(p):
+    if p:
+        line = p.lexer.lexdata[:p.lexpos].count('\n') + 1
+        col = find_column(p.lexer.lexdata, p)
+        syntax_errors.append(
+            f"Syntax error at line {line}, column {col}: unexpected token '{p.value}'"
+        )
+    else:
+        syntax_errors.append("Syntax error: unexpected end of input!")
+\end{verbatim}
+
+\noindent
+
+\begin{itemize}
+    \item Obtém a linha e coluna aproximada em que o token inesperado ocorreu, usando \texttt{lexdata} e \texttt{lexpos}.
+    \item Se \texttt{p} for \texttt{None}, significa fim de ficheiro inesperado.
+    \item As mensagens são acumuladas em \texttt{syntax\_errors}, sem interromper imediatamente o parsing.
+\end{itemize}
+
+\section{Verificações Semânticas Básicas}
+\label{sec:verificacoes}
+
+Embora o parser tenha como missão principal verificar a conformidade sintática, foram incorporadas algumas verificações semânticas simples:
+
+\subsection{Existência de Variáveis}
+
+Na produção de atribuição:
+
+\begin{verbatim}
+def p_SingleStatement_assign(p):
+    "SingleStatement : VARNAME ATRIB Exp OptionalSemicolon"
+    if p[1] in dic:
+        var_type = dic[p[1]][1]
+        dic[p[1]] = (p[3], var_type)
+    else:
+        print(f"Error: variable {p[1]} not declared")
+        dic[p[1]] = (p[3], None)
+    p[0] = ('assign', p[1], p[3])
+\end{verbatim}
+
+\noindent
+
+\begin{itemize}
+    \item Se \texttt{VARNAME} não estiver em \texttt{dic}, imprime mensagem de erro de variável não declarada e regista \texttt{(valor, None)} no \texttt{dic}. Isto evita que a tradução prossiga silenciosamente num programa que usa variáveis indefinidas.
+    \item Caso exista, atualiza temporariamente o valor da variável em \texttt{dic} (útil para verificar, por exemplo, índices literais de arrays ou formatação de \texttt{write}).
+\end{itemize}
+
+\subsection{Verificação de Limites de Arrays}
+
+Na produção de acesso a elemento de array:
+
+\begin{verbatim}
+def p_Factor_array(p):
+    "Factor : VARNAME '[' Exp ']'"
+    limit = dic[p[1]][1][1]
+    a, b = limit
+    # Caso p[3] seja inteiro literal
+    if isinstance(p[3], int):
+        value = p[3]
+    elif isinstance(p[3][1], int) or isinstance(p[3][1], float):
+        value = -p[3][1]
+    else:
+        value = p[3]
+    if isinstance(value, int) and not value in range(a, b + 1):
+        print("Warning: range check error ...")
+        parser.success = False
+    p[0] = ('array_access', p[1], p[3])
+\end{verbatim}
+
+\noindent
+
+\begin{itemize}
+    \item Obtém o tuplo \texttt{limit = (lower, upper)} da declaração do array (armazenada em \texttt{dic}).
+    \item Se o índice for literal (inteiro), verifica se \texttt{lower ≤ índice ≤ upper}. Caso contrário, gera um aviso e define \texttt{parser.success = False}, impedindo tradução posterior.
+    \item Se o índice for expressão mais complexa, tenta extrair valor de \texttt{p[3][1]}, mas esta abordagem só funciona em certos casos de expressões unárias. Para expressões arbitrárias, não há verificação estática.
+    \item O nó AST resultante é \texttt{('array\_access', nome\_array, Exp)}.
+\end{itemize}
+
+\subsection{Verificação em \texttt{readln} de Array}
+
+De forma análoga, em \texttt{p\_SingleStatement\_readln\_array}, verifica-se índice constante em tempo de parsing, havendo um report \texttt{parser.success = False} casjo esteja fora dos limites.
+
+\section{Tratamento de Erros Sintáticos}
+\label{sec:erros}
+
+As principais estratégias adotadas para detetar e reportar erros sintáticos são:
+
+\begin{itemize}
+    \item \textbf{Registar em lista}: Todas as mensagens de erro acumulam-se em \texttt{syntax\_errors}. Ao final do parsing, se a lista não estiver vazia, imprime-se cada erro ao utilizador e aborta-se a tradução.
+    \item \textbf{Linha e coluna aproximadas}: A função auxiliar \texttt{find\_column} (não exibida aqui) calcula a coluna exata do token inválido, baseada no número de caracteres desde o início da linha corrente.  
+    \item \textbf{Não interrupção imediata}: Ao contrário de “fail-fast”, o PLY tenta fazer \emph{error recovery} básico (ignorando tokens inválidos). O parser armazena cada ocorrência para posterior análise, apresentando ao final todos os erros detetados numa única execução.
+\end{itemize}
+
+\section{Limitações e Trabalhos Futuros}
+
+\subsection{Verificação de Índices de Arrays para Expressões Complexas}
+
+Atualmente, a checagem estática de índices apenas funciona se o índice for literal ou expressão unária simples. Para expressões como \texttt{arr[i+1]}, não se verifica o valor em tempo de parsing. Possíveis melhorias:
+
+\begin{itemize}
+    \item Implementar um pequeno interpretador estático que avalie expressões compostas se as variáveis envolvidas tiverem valores constantes conhecidos em tempo de compilação.
+    \item Caso não seja possível análise estática, adotar verificação dinâmica no código traduzido (inserir instruções EWVM que validem índice em tempo de execução, gerando erro ou terminando programa caso fora do limite).
+\end{itemize}
+
+\subsection{Precedência de \texttt{AND} e \texttt{OR}}
+
+Na gramática, \texttt{AND} e \texttt{OR} foram colocados no mesmo nível de não-associativo que operadores relacionais. Em Pascal standard, \texttt{AND} e \texttt{OR} possuem precedência inferior às comparações. Caso se deseje maior conformidade semântica:
+
+\begin{itemize}
+    \item Ajustar a tabela \texttt{precedence} para:
+    
+    \begin{verbatim}        
+precedence = (
+    ('nonassoc', 'EQUALS', 'NE', 'LT', 'LE', 'GT', 'GE'),
+    ('left', 'AND', 'OR'),
+    ('left', '+', '-'),
+    ('left', '*', '/', '%'),
+    ('right', 'UMINUS'),
+    ('right', 'NOT'),
+)
+    \end{verbatim}
+    
+    \item Rever as produções que encaixam \texttt{AND}/\texttt{OR} em \texttt{RelOp}.
+\end{itemize}
+
+\subsection{Integração de Tabelas de Símbolos Locais}
+
+Atualmente, a tabela de símbolos (\texttt{dic}) é global, o que impede suporte a scopes internos (por ex., variáveis locais em \texttt{for} ou em subprogramas). Futuras versões podem:
+
+\begin{itemize}
+    \item Substituir \texttt{dic} por classe \texttt{SymbolTable} hierárquica, mantendo pilha de escopos.
+    \item Garantir que declarações dentro de blocos \texttt{begin/end} sejam restritas a esse escopo.
+\end{itemize}

@@ -1,0 +1,60 @@
+% ficheiro: chapters/lexer.tex
+\chapter{Lexer}
+
+Para a análise léxica foi-nos proposto a implementação de um analisador léxico para converter código Pascal numa lista de tokens, bem como usar a libraria ply, nomeadamente a ferramenta \textbf{ply.lex} para esta implementação e também a identificação de palavras-chave, identificadores, números, operadores e símbolos especiais.
+
+\section{Implementação do Lexer}
+
+Tal como foi dito anteriormente, o lexer do projeto foi implementado utilizando a biblioteca PLY que permite a definição de regras léxicas através de expressões regulares. O objetivo do lexer é transformar o código fonte Pascal numa sequência de tokens que serão posteriormente analisados pelo parser.
+
+\subsection{Palavras Reservadas e Tokens}
+
+No início do ficheiro, é definido umas regras para a deteção de comentários, sendo ,logo de seguida, apresentado um dicionário \texttt{reserved} que associa as palavras reservadas da linguagem Pascal aos respetivos nomes de tokens. Isto permite ao lexer distinguir facilmente entre identificadores normais e palavras-chave da linguagem.
+
+Temos também uma lista \texttt{tokens} que inclui todos os tipos de tokens reconhecidos pelo lexer, tal como:
+\begin{enumerate}
+    \item Números Reais (NUM\_REAL).
+    \item Números inteiros (NUM).
+    \item Strings (STR).
+    \item Identificadores (VARNAME).
+    \item Operadores de Atribuição (ATRIB).
+    \item Operadores Relacionais (EQUALS, NE, LT, LE, GT, GE)
+\end{enumerate}
+
+Bem como todos os outros tokens correspondentes a palvaras reservadas definidas anteriormente.
+
+Além disso, a lista \texttt{literals} define os caracteres individuais que são tratados como tokens literais, como operadores aritméticos (+, -, ...), parênteses, ponto e vírgula, entre outros.
+
+\subsection{Regras Léxicas}
+
+Cada token é definido por uma função Python cujo nome começa por t\_ seguido do nome do token para fácil interpretação. Estas funções utilizam expressões regulares para identificar padrões no texto de entrada seguindo a mesma estrutura:
+
+\begin{verbatim}
+    def t_Token(t):
+        r'RE equivalente'
+        t.type = 'Token'
+        return t
+\end{verbatim}
+
+\begin{enumerate}
+    \item \textbf{Operadores de atribuição e relacionais}: São definidos tokens para :=, =, <>, <=, >=, <, >, cada um com a sua expressão regular.
+
+    \item \textbf{Números}:\begin{enumerate}
+        \item t\_NUM\_REAL reconhece números reais (com ponto decimal).
+        \item t\_NUM reconhece números inteiros.
+    \end{enumerate}
+
+    \item \textbf{Strings}: O token t\_STRING reconhece sequências de caracteres entre aspas.
+    
+    \item \textbf{Identificadores e Palavras Reservadas}: O token t\_VARNAME reconhece identificadores válidos em Pascal. Caso o identificador corresponda a uma palavra reservada, o tipo do token é ajustado para o valor correto usando o dicionário reserved.
+    
+    \item \textbf{Novas linhas}: A função t\_newline atualiza o número da linha do lexer sempre que encontra um ou mais caracteres de nova linha.
+    
+    \item \textbf{Espaços e tabs}: São ignorados pelo lexer através da variável t\_ignore.
+    
+    \item \textbf{Tratamento de erros}: A função t\_error é chamada sempre que um caracte inválido é encontrado, imprimindo uma mensagem de erro com o caractere e a linha correspondente, avançando o lexer para o próximo caractere.
+\end{enumerate}
+
+\subsection{Inicialização}
+
+No final do ficheiro, o lexer é criado com lex.lex() e o número da linha é inicializado a 1 de modo a começar logo na primeira linha.

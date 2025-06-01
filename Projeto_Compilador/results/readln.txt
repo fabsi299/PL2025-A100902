@@ -1,0 +1,46 @@
+PUSHS ""
+PUSHI 0
+PUSHF 0.0
+START
+PUSHS "Digite seu nome: "
+WRITES
+WRITELN
+READ
+STOREG 0
+PUSHS "Digite sua idade: "
+WRITES
+READ
+ATOI
+STOREG 1
+PUSHS "Digite sua altura (em metros): "
+WRITES
+READ
+ATOF
+STOREG 2
+PUSHS "=== Dados informados ==="
+WRITES
+WRITELN
+PUSHS "Nome: "
+WRITES
+PUSHG 0
+WRITES
+WRITELN
+PUSHS "Idade: "
+WRITES
+PUSHG 1
+WRITEI
+PUSHS " anos"
+WRITES
+WRITELN
+PUSHS "Altura: "
+WRITES
+PUSHG 2
+WRITEI
+PUSHS " metros"
+WRITES
+WRITELN
+WRITELN
+PUSHS "Pressione Enter para sair..."
+WRITES
+WRITELN
+STOP

@@ -1,0 +1,47 @@
+PUSHF 0.0
+PUSHI 0
+PUSHI 0
+START
+PUSHF 12.0
+STOREG 0
+PUSHI 10
+STOREG 1
+PUSHI 300
+STOREG 2
+PUSHS "this is some text"
+WRITES
+PUSHS "unformatted integer "
+WRITES
+PUSHG 1
+WRITEI
+WRITELN
+PUSHS "unformatted integer computation "
+WRITES
+PUSHG 1
+PUSHG 1
+MUL
+WRITEI
+WRITELN
+PUSHS "formatted integer"
+WRITES
+PUSHG 1
+WRITEI
+WRITELN
+PUSHS "formatted integer"
+WRITES
+PUSHG 2
+WRITEI
+WRITELN
+PUSHS "unformatted real "
+WRITES
+PUSHG 0
+WRITEF
+WRITELN
+PUSHS "formatted real"
+WRITES
+PUSHG 0
+WRITEI
+PUSHS "all in one line"
+WRITES
+WRITELN
+STOP
